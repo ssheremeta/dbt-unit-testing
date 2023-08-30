@@ -1,4 +1,4 @@
-{% macro dbt_unit_testing.build_model_complete_sql(model_node, mocks=[], options={}) %}
+{% macro build_model_complete_sql(model_node, mocks=[], options={}) %}
   {% set mock_ids = mocks | rejectattr("options.include_missing_columns", "==", true) | map(attribute="unique_id") | list %}
   {% set only_direct_dependencies = options.use_database_models %}
   {% set model_dependencies = dbt_unit_testing.build_model_dependencies(model_node, mock_ids, only_direct_dependencies) %}
