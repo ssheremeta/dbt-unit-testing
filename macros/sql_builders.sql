@@ -1,31 +1,20 @@
-{% macro build_model_complete_sql(model_node, mocks=[], options={}) %}
+{% macro dbt_unit_testing.build_model_complete_sql(model_node, mocks=[], options={}) %}
   {% set mock_ids = mocks | rejectattr("options.include_missing_columns", "==", true) | map(attribute="unique_id") | list %}
   {% set only_direct_dependencies = options.use_database_models %}
   {% set model_dependencies = dbt_unit_testing.build_model_dependencies(model_node, mock_ids, only_direct_dependencies) %}
   -- {# add mocks that are not in model dependencies (to allow for mocking the model itself, when testing incremental models) #}
   {% set model_dependencies = model_dependencies + mocks | map(attribute="unique_id") | reject('in', model_dependencies) | list %}
-
-  {% set cte_dependencies = [] %}
+  {% set rendered_node = dbt_unit_testing.render_node_for_model_being_tested(model_node) %}
+  {% set model_complete_sql = {"sql": rendered_node} %}
   {% for node_id in model_dependencies %}
     {% set node = dbt_unit_testing.node_by_id(node_id) %}
     {% set existing_mock = mocks | selectattr("unique_id", "==", node_id) | first %}
     {% set cte_sql = existing_mock.input_values if existing_mock else dbt_unit_testing.build_node_sql(node, options.use_database_models) %}
     {% set cte_name = dbt_unit_testing.cte_name(existing_mock if existing_mock else node) %}
-    {% set cte = dbt_unit_testing.quote_identifier(cte_name) ~ " as (" ~ cte_sql ~ ")" %}
-    {% set cte_dependencies = cte_dependencies.append(cte) %}
-  {%- endfor -%}
-
-  {% set rendered_node = dbt_unit_testing.render_node_for_model_being_tested(model_node) %}
-  {%- set model_complete_sql -%}
-    {% if cte_dependencies %}
-      with
-      {{ cte_dependencies | join(",\n") }}
-    {%- endif -%}
-    {{ "\n" }}
-    select * from ({{ rendered_node }} {{ "\n" }} ) as t
-  {%- endset -%}
-
-  {{ return(model_complete_sql) }}
+    {% set replaced_sql = model_complete_sql.sql.replace(cte_name, "(" + cte_sql + ')') %}
+    {% do model_complete_sql.update({"sql": replaced_sql}) %}
+  {% endfor %}
+  {{ return(model_complete_sql.sql) }}
 {% endmacro %}
 
 {% macro cte_name(node) %}
